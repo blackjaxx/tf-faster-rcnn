@@ -1,4 +1,4 @@
-# --------------------------------------------------------
+#--------------------------------------------------------
 # Tensorflow Faster R-CNN
 # Licensed under The MIT License [see LICENSE for details]
 # Written by Xinlei Chen
@@ -19,6 +19,7 @@ from layer_utils.proposal_layer import proposal_layer
 from layer_utils.proposal_top_layer import proposal_top_layer
 from layer_utils.anchor_target_layer import anchor_target_layer
 from layer_utils.proposal_target_layer import proposal_target_layer
+from layer_utils.mixing_layer import mixing_layer
 from utils.visualization import draw_bounding_boxes
 
 from model.config import cfg
@@ -208,6 +209,8 @@ class Network(object):
       initializer_bbox = tf.random_normal_initializer(mean=0.0, stddev=0.001)
 
     net_conv = self._image_to_head(is_training)
+    ### refresh here
+    #net_conv = mixing_layer(name='net_conv',glimpse=net_conv,refresh=self._refresh)
     with tf.variable_scope(self._scope, self._scope):
       # build the anchors for the image
       self._anchor_component()
@@ -289,10 +292,10 @@ class Network(object):
     return loss
 
   def _region_proposal(self, net_conv, is_training, initializer):
-    rpn = slim.conv2d(net_conv, cfg.RPN_CHANNELS, [3, 3], trainable=is_training, weights_initializer=initializer,
+    rpn = slim.conv2d(net_conv, cfg.RPN_CHANNELS, [3, 3], trainable=True, weights_initializer=initializer,
                         scope="rpn_conv/3x3")
     self._act_summaries.append(rpn)
-    rpn_cls_score = slim.conv2d(rpn, self._num_anchors * 2, [1, 1], trainable=is_training,
+    rpn_cls_score = slim.conv2d(rpn, self._num_anchors * 2, [1, 1], trainable=True,
                                 weights_initializer=initializer,
                                 padding='VALID', activation_fn=None, scope='rpn_cls_score')
     # change it so that the score has 2 as its channel size
@@ -300,7 +303,7 @@ class Network(object):
     rpn_cls_prob_reshape = self._softmax_layer(rpn_cls_score_reshape, "rpn_cls_prob_reshape")
     rpn_cls_pred = tf.argmax(tf.reshape(rpn_cls_score_reshape, [-1, 2]), axis=1, name="rpn_cls_pred")
     rpn_cls_prob = self._reshape_layer(rpn_cls_prob_reshape, self._num_anchors * 2, "rpn_cls_prob")
-    rpn_bbox_pred = slim.conv2d(rpn, self._num_anchors * 4, [1, 1], trainable=is_training,
+    rpn_bbox_pred = slim.conv2d(rpn, self._num_anchors * 4, [1, 1], trainable=True,
                                 weights_initializer=initializer,
                                 padding='VALID', activation_fn=None, scope='rpn_bbox_pred')
     if is_training:
@@ -310,12 +313,12 @@ class Network(object):
       with tf.control_dependencies([rpn_labels]):
         rois, _ = self._proposal_target_layer(rois, roi_scores, "rpn_rois")
     else:
-      if cfg.TEST.MODE == 'nms':
-        rois, _ = self._proposal_layer(rpn_cls_prob, rpn_bbox_pred, "rois")
-      elif cfg.TEST.MODE == 'top':
-        rois, _ = self._proposal_top_layer(rpn_cls_prob, rpn_bbox_pred, "rois")
-      else:
-        raise NotImplementedError
+      #if cfg.TEST.MODE == 'nms':
+      #  rois, _ = self._proposal_layer(rpn_cls_prob, rpn_bbox_pred, "rois")
+      #elif cfg.TEST.MODE == 'top':
+      rois, _ = self._proposal_top_layer(rpn_cls_prob, rpn_bbox_pred, "rois")
+      #else:
+      #  raise NotImplementedError
 
     self._predictions["rpn_cls_score"] = rpn_cls_score
     self._predictions["rpn_cls_score_reshape"] = rpn_cls_score_reshape
@@ -323,7 +326,7 @@ class Network(object):
     self._predictions["rpn_cls_pred"] = rpn_cls_pred
     self._predictions["rpn_bbox_pred"] = rpn_bbox_pred
     self._predictions["rois"] = rois
-
+    
     return rois
 
   def _region_classification(self, fc7, is_training, initializer, initializer_bbox):
@@ -356,6 +359,7 @@ class Network(object):
     self._image = tf.placeholder(tf.float32, shape=[1, None, None, 3])
     self._im_info = tf.placeholder(tf.float32, shape=[3])
     self._gt_boxes = tf.placeholder(tf.float32, shape=[None, 5])
+    self._refresh = tf.placeholder(tf.bool)
     self._tag = tag
 
     self._num_classes = num_classes
@@ -435,9 +439,10 @@ class Network(object):
     return feat
 
   # only useful during testing mode
-  def test_image(self, sess, image, im_info):
+  def test_image(self, sess, image, im_info, refresh):
     feed_dict = {self._image: image,
-                 self._im_info: im_info}
+                 self._im_info: im_info, 
+                 self._refresh: refresh}
 
     cls_score, cls_prob, bbox_pred, rois = sess.run([self._predictions["cls_score"],
                                                      self._predictions['cls_prob'],
@@ -448,14 +453,14 @@ class Network(object):
 
   def get_summary(self, sess, blobs):
     feed_dict = {self._image: blobs['data'], self._im_info: blobs['im_info'],
-                 self._gt_boxes: blobs['gt_boxes']}
+                 self._gt_boxes: blobs['gt_boxes'], self._refresh: blobs['refresh']}
     summary = sess.run(self._summary_op_val, feed_dict=feed_dict)
 
     return summary
 
   def train_step(self, sess, blobs, train_op):
     feed_dict = {self._image: blobs['data'], self._im_info: blobs['im_info'],
-                 self._gt_boxes: blobs['gt_boxes']}
+                 self._gt_boxes: blobs['gt_boxes'], self._refresh: blobs['refresh']}
     rpn_loss_cls, rpn_loss_box, loss_cls, loss_box, loss, _ = sess.run([self._losses["rpn_cross_entropy"],
                                                                         self._losses['rpn_loss_box'],
                                                                         self._losses['cross_entropy'],
@@ -467,7 +472,7 @@ class Network(object):
 
   def train_step_with_summary(self, sess, blobs, train_op):
     feed_dict = {self._image: blobs['data'], self._im_info: blobs['im_info'],
-                 self._gt_boxes: blobs['gt_boxes']}
+                 self._gt_boxes: blobs['gt_boxes'], self._refresh: blobs['refresh']}
     rpn_loss_cls, rpn_loss_box, loss_cls, loss_box, loss, summary, _ = sess.run([self._losses["rpn_cross_entropy"],
                                                                                  self._losses['rpn_loss_box'],
                                                                                  self._losses['cross_entropy'],
@@ -480,6 +485,6 @@ class Network(object):
 
   def train_step_no_return(self, sess, blobs, train_op):
     feed_dict = {self._image: blobs['data'], self._im_info: blobs['im_info'],
-                 self._gt_boxes: blobs['gt_boxes']}
+                 self._gt_boxes: blobs['gt_boxes'], self._refresh: blobs['refresh']}
     sess.run([train_op], feed_dict=feed_dict)
 

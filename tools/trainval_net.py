@@ -21,6 +21,7 @@ import tensorflow as tf
 from nets.vgg16 import vgg16
 from nets.resnet_v1 import resnetv1
 from nets.mobilenet_v1 import mobilenetv1
+from nets.vgg16_memory import vgg16_memory
 
 def parse_args():
   """
@@ -52,6 +53,11 @@ def parse_args():
                       help='set config keys', default=None,
                       nargs=argparse.REMAINDER)
 
+  ### add memory option
+  parser.add_argument('--memory',dest='memory',
+                      help='keep memory of each glimpse', 
+                      default=None, type=str)
+                      
   if len(sys.argv) == 1:
     parser.print_help()
     sys.exit(1)
@@ -88,6 +94,7 @@ def combined_roidb(imdb_names):
 if __name__ == '__main__':
   args = parse_args()
 
+  print('\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n')
   print('Called with args:')
   print(args)
 
@@ -100,7 +107,7 @@ if __name__ == '__main__':
   pprint.pprint(cfg)
 
   np.random.seed(cfg.RNG_SEED)
-
+  
   # train set
   imdb, roidb = combined_roidb(args.imdb_name)
   print('{:d} roidb entries'.format(len(roidb)))
@@ -122,7 +129,11 @@ if __name__ == '__main__':
 
   # load network
   if args.net == 'vgg16':
-    net = vgg16()
+    ### load memory network
+    if args.memory == '1': 
+      net = vgg16_memory()
+    else:
+      net = vgg16()
   elif args.net == 'res50':
     net = resnetv1(num_layers=50)
   elif args.net == 'res101':

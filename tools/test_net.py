@@ -9,6 +9,7 @@ from __future__ import print_function
 
 import _init_paths
 from model.test import test_net
+from model.test_memory import test_memory_net
 from model.config import cfg, cfg_from_file, cfg_from_list
 from datasets.factory import get_imdb
 import argparse
@@ -17,6 +18,7 @@ import time, os, sys
 
 import tensorflow as tf
 from nets.vgg16 import vgg16
+from nets.vgg16_memory import vgg16_memory
 from nets.resnet_v1 import resnetv1
 from nets.mobilenet_v1 import mobilenetv1
 
@@ -48,6 +50,10 @@ def parse_args():
                         help='set config keys', default=None,
                         nargs=argparse.REMAINDER)
 
+  ### add memory option 
+  parser.add_argument('--memory',dest='memory',
+                      help='keep memory of each glimpse',
+                      default=None, type=str)
   if len(sys.argv) == 1:
     parser.print_help()
     sys.exit(1)
@@ -90,7 +96,10 @@ if __name__ == '__main__':
   sess = tf.Session(config=tfconfig)
   # load network
   if args.net == 'vgg16':
-    net = vgg16()
+    if args.memory == '1':
+      net = vgg16_memory()
+    else:
+      net = vgg16()
   elif args.net == 'res50':
     net = resnetv1(num_layers=50)
   elif args.net == 'res101':
@@ -109,14 +118,19 @@ if __name__ == '__main__':
 
   if args.model:
     print(('Loading model check point from {:s}').format(args.model))
-    saver = tf.train.Saver()
+    sess.run(tf.global_variables_initializer())
+    restore_var = net.get_variables_to_restore_for_test() 
+    saver = tf.train.Saver(var_list=restore_var)
     saver.restore(sess, args.model)
     print('Loaded.')
   else:
     print(('Loading initial weights from {:s}').format(args.weight))
     sess.run(tf.global_variables_initializer())
     print('Loaded.')
-
-  test_net(sess, net, imdb, filename, max_per_image=args.max_per_image)
+  
+  if args.memory=='1':
+    test_memory_net(sess, net, imdb, filename, repeat_times=3, max_per_image=args.max_per_image)
+  else:
+    test_net(sess, net, imdb, filename, max_per_image=args.max_per_image)
 
   sess.close()

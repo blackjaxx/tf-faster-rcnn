@@ -16,7 +16,7 @@ import cv2
 from model.config import cfg
 from utils.blob import prep_im_for_blob, im_list_to_blob
 
-def get_minibatch(roidb, num_classes):
+def get_minibatch(roidb, num_classes, refresh = False):
   """Given a roidb, construct a minibatch sampled from it."""
   num_images = len(roidb)
   # Sample random scales to use for each image in this batch
@@ -48,6 +48,7 @@ def get_minibatch(roidb, num_classes):
   blobs['im_info'] = np.array(
     [im_blob.shape[1], im_blob.shape[2], im_scales[0]],
     dtype=np.float32)
+  blobs['refresh'] = refresh
 
   return blobs
 

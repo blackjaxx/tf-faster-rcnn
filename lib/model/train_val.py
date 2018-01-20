@@ -133,13 +133,15 @@ class SolverWrapper(object):
       if cfg.TRAIN.DOUBLE_BIAS:
         final_gvs = []
         with tf.variable_scope('Gradient_Mult') as scope:
-          for grad, var in gvs:
-            scale = 1.
-            if cfg.TRAIN.DOUBLE_BIAS and '/biases:' in var.name:
-              scale *= 2.
-            if not np.allclose(scale, 1.0):
-              grad = tf.multiply(grad, scale)
-            final_gvs.append((grad, var))
+          for grad, var in gvs: 
+            if not 'memory' in var.name:
+              scale = 1.
+              if cfg.TRAIN.DOUBLE_BIAS and '/biases:' in var.name:
+                scale *= 2.
+              if not np.allclose(scale, 1.0):
+                print(var.name)
+                grad = tf.multiply(grad, scale)
+              final_gvs.append((grad, var))
         train_op = self.optimizer.apply_gradients(final_gvs)
       else:
         train_op = self.optimizer.apply_gradients(gvs)
@@ -369,7 +371,6 @@ def train_net(network, imdb, roidb, valroidb, output_dir, tb_dir,
 
   tfconfig = tf.ConfigProto(allow_soft_placement=True)
   tfconfig.gpu_options.allow_growth = True
-
   with tf.Session(config=tfconfig) as sess:
     sw = SolverWrapper(sess, network, imdb, roidb, valroidb, output_dir, tb_dir,
                        pretrained_model=pretrained_model)

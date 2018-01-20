@@ -28,6 +28,11 @@ class RoIDataLayer(object):
     # Also set a random flag
     self._random = random
     self._shuffle_roidb_inds()
+    ### repeat each image max repeat times to simulate static observation
+    ### set to 1 for normal training
+    self._max_repeat = 3
+    self._cur_repeat = 0
+    self._call_times = 0
 
   def _shuffle_roidb_inds(self):
     """Randomly permute the training roidb."""
@@ -63,12 +68,22 @@ class RoIDataLayer(object):
 
   def _get_next_minibatch_inds(self):
     """Return the roidb indices for the next minibatch."""
-    
+    ### if starts a new observation then refreshing the memory in the memory variable
+    ### refresh if set to True
+    self._refresh = False
+    if self._call_times == 0:
+      self._refresh = True
+    if self._cur_repeat >= self._max_repeat:
+      self._cur_repeat = 0
+      self._cur += cfg.TRAIN.IMS_PER_BATCH
+      self._refresh = True
+      
     if self._cur + cfg.TRAIN.IMS_PER_BATCH >= len(self._roidb):
       self._shuffle_roidb_inds()
 
     db_inds = self._perm[self._cur:self._cur + cfg.TRAIN.IMS_PER_BATCH]
-    self._cur += cfg.TRAIN.IMS_PER_BATCH
+    ### this limits the imgs_per_batch to 1 (TODO: add multi imgs per batch support)
+    self._cur_repeat += cfg.TRAIN.IMS_PER_BATCH
 
     return db_inds
 
@@ -80,9 +95,10 @@ class RoIDataLayer(object):
     """
     db_inds = self._get_next_minibatch_inds()
     minibatch_db = [self._roidb[i] for i in db_inds]
-    return get_minibatch(minibatch_db, self._num_classes)
+    return get_minibatch(minibatch_db, self._num_classes, self._refresh)
       
   def forward(self):
-    """Get blobs and copy them into this layer's top blob vector."""
+    """Get blobs and copy them into this layer's top blob vector.""" 
     blobs = self._get_next_minibatch()
+    self._call_times += 1
     return blobs
